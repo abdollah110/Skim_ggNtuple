@@ -1,11 +1,18 @@
 #!/bin/bash
+#
+#echo "input parameters: cluster, process, run path, out path, sample name" $1 $2 $3 $4
+#CLUSTER=$1
+#PROCESS=$2
+#RUNPATH=$3
+#OUTPATH=$4
 
-echo "input parameters: cluster, process, run path, out path, sample name" $1 $2 $3 $4 $5
-CLUSTER=$1
-PROCESS=$2
-RUNPATH=$3
-OUTPATH=$4
-SAMPLE=$5
+
+#########For running locally uncommnet this line
+CLUSTER=""
+PROCESS=5
+RUNPATH="/uscms_data/d3/abdollah/Analysis/LQ2016/CMSSW_8_0_11/src/Skim_ggNtuple"
+OUTPATH=""
+
 
 echo ""
 echo "CMSSW on Condor"
@@ -20,7 +27,6 @@ echo "CLUSTER: $CLUSTER"
 echo "PROCESS: $PROCESS"
 echo "RUNPATH: $RUNPATH"
 echo "OUTPATH: $OUTPATH"
-echo "SAMPLE: $SAMPLE"
 
 source /cvmfs/cms.cern.ch/cmsset_default.sh
 echo $PWD
@@ -32,38 +38,54 @@ echo "check whether eos is working here"
 echo ${_CONDOR_SCRATCH_DIR}
 cd ${_CONDOR_SCRATCH_DIR}
 echo $PWD , "for job running"
-let "var++"
-let "count=${2}+1"
+
+
+###### Copy the neccessary files for running the Skim
 cp $RUNPATH/Skimmer.cc .
 cp $RUNPATH/Skimmer.h .
 cp $RUNPATH/Makefile .
 cp $RUNPATH/ListName.txt .
 
 
-NumberOfJeob=10
-lines2=($(cat ListName.txt)) # array
-echo ${lines2[$PROCESS / $NumberOfJeob]}
-input2=${lines2[$PROCESS / $NumberOfJeob]}
-NumberCrab=$(($PROCESS % $NumberOfJeob))
 
 
+
+#########  Smaple/Job splitting
+SplitingNumber=10
+DataSetArray=($(cat ListName.txt)) # array of the input datadets
+echo ${DataSetArray[$PROCESS / $SplitingNumber]}
+DataSetName=${DataSetArray[$PROCESS / $SplitingNumber]}
+rootNumber=$(($PROCESS % $SplitingNumber))
+
+
+########### complie the Skimmer
 make
-xrdfs root://cmseos.fnal.gov ls "/eos/uscms/store/user/abdollah/Crab3/ggNtuple/80X/"$input2 | grep $NumberCrab.root
-xrdfs root://cmseos.fnal.gov ls "/eos/uscms/store/user/abdollah/Crab3/ggNtuple/80X/"$input2 | grep $NumberCrab.root | while read line2
+
+
+########### loop over all root file in a dataset directory
+xrdfs root://cmseos.fnal.gov ls "/eos/uscms/store/user/abdollah/Crab3/ggNtuple/80X/"$DataSetName | grep $rootNumber.root | while read FullDataSetName
+
+############  Here is where the Skimmer is running     ############
 do
- 
- file=`echo $line2`
- Name=${file##*80X}
- echo "Here is the first check   ------>" $Name
- ./Skimmer  $Name
-done  
+ file=`echo $FullDataSetName`
+ ShortName=${file##*80X}  # This removes all the string before 80X (including 80X)
+ echo "Here is the short Name   ------>" $ShortName
+ ./Skimmer  $ShortName
+done
+############  Here is where the Skimmer ends          ############
+
+
+
 IFS="/"
-set $input2
-OutName=$4$6$NumberCrab".root"
+set $DataSetName
+OutName=$4$6$rootNumber".root"
 echo $OutName
 hadd -f $OutName "skimed_"*.root
-#xrdcp $OutName root://cmseos.fnal.gov//store/user/abdollah/Crab3/Hadd80X/$OutName
-#touch $OutName.txt
+
+
+
+
+##########  remove the unneccesat files
 rm skim*root  Skimmer.cc  Skimmer.h  Makefile  ListName.txt
 echo "Done execution ..."
 
